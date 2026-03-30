@@ -3,16 +3,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Map, { Layer, Marker, Popup, Source } from "react-map-gl/maplibre";
 import {
+  Check,
   ChevronDown,
   ChevronUp,
-  Crosshair,
+  Compass,
   Filter,
+  Focus,
   Layers3,
-  LocateFixed,
   Map as MapIcon,
+  Maximize,
   Minus,
   Plus,
+  Ruler,
   Search,
+  Settings,
   X,
 } from "lucide-react";
 
@@ -21,38 +25,62 @@ const MAP_STYLES = {
     label: "Terrain",
     tiles: ["https://tiles.stadiamaps.com/tiles/outdoors/{z}/{x}/{y}@2x.png"],
     attribution: "© Stadia Maps © OpenStreetMap",
-    preview: "linear-gradient(135deg,#7c8b74 0%,#c8c7b2 55%,#efe6d7 100%)",
+    previewStyle: {
+      backgroundColor: "#d9d7c8",
+      backgroundImage:
+        "linear-gradient(145deg, rgba(90,106,79,0.95) 0 24%, rgba(181,190,171,0.95) 24% 54%, rgba(234,228,209,0.95) 54%), linear-gradient(120deg, transparent 0 50%, rgba(255,255,255,0.28) 50% 54%, transparent 54% 100%)",
+    },
   },
   voyager: {
     label: "Street",
     tiles: ["https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png"],
     attribution: "© CARTO © OpenStreetMap",
-    preview: "linear-gradient(135deg,#dbeafe 0%,#ffffff 35%,#fca5a5 60%,#6ee7b7 100%)",
+    previewStyle: {
+      backgroundColor: "#f7f7f5",
+      backgroundImage:
+        "linear-gradient(130deg, transparent 0 24%, #8bb5f4 24% 31%, transparent 31% 100%), linear-gradient(42deg, transparent 0 44%, #fb7185 44% 52%, transparent 52% 100%), linear-gradient(90deg, transparent 0 58%, #5eead4 58% 64%, transparent 64% 100%), linear-gradient(180deg, transparent 0 34%, #f8fafc 34% 100%)",
+    },
   },
   osm: {
     label: "OSM",
     tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
     attribution: "© OpenStreetMap Contributors",
-    preview: "linear-gradient(135deg,#f3f8e3 0%,#d9f99d 35%,#f8fafc 70%,#d1fae5 100%)",
+    previewStyle: {
+      backgroundColor: "#eef4de",
+      backgroundImage:
+        "linear-gradient(140deg, #eef4de 0 48%, #d7efae 48% 100%), linear-gradient(35deg, transparent 0 46%, rgba(255,255,255,0.8) 46% 52%, transparent 52% 100%), linear-gradient(115deg, transparent 0 64%, rgba(255,255,255,0.7) 64% 69%, transparent 69% 100%)",
+    },
   },
   satellite: {
     label: "Satellite",
     tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
     attribution: "© Esri",
     tileSize: 256,
-    preview: "linear-gradient(135deg,#2451a4 0%,#4f7d4c 48%,#c8ba7d 100%)",
+    previewStyle: {
+      backgroundColor: "#426d49",
+      backgroundImage:
+        "radial-gradient(circle at 25% 20%, rgba(32,75,143,0.95) 0 24%, transparent 25%), radial-gradient(circle at 72% 66%, rgba(196,185,128,0.78) 0 18%, transparent 19%), linear-gradient(135deg, #204b8f 0%, #49784a 45%, #8d8554 72%, #c4b980 100%)",
+    },
   },
   light: {
     label: "Light",
     tiles: ["https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png"],
     attribution: "© CARTO © OpenStreetMap",
-    preview: "linear-gradient(135deg,#f8fafc 0%,#e2e8f0 100%)",
+    previewStyle: {
+      backgroundColor: "#f1f5f9",
+      backgroundImage:
+        "linear-gradient(135deg, rgba(255,255,255,0.96) 0%, rgba(226,232,240,0.98) 100%), linear-gradient(45deg, transparent 0 46%, rgba(203,213,225,0.8) 46% 50%, transparent 50% 100%)",
+    },
   },
   dark: {
     label: "Dark",
     tiles: ["https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png"],
     attribution: "© CARTO © OpenStreetMap",
-    preview: "linear-gradient(135deg,#10172e 0%,#1e2a49 100%)",
+    previewStyle: {
+      backgroundColor: "#10172e",
+      backgroundImage:
+        "linear-gradient(135deg, #12192f 0%, #1f2b4a 100%), linear-gradient(45deg, transparent 0 44%, rgba(77,93,132,0.45) 44% 48%, transparent 48% 100%)",
+    },
   },
 };
 
@@ -66,7 +94,10 @@ const DEFAULT_VIEW_STATE = {
 
 const GIS_BASE_URL = (process.env.NEXT_PUBLIC_GIS_BASE_URL || "http://192.168.0.102:8060").replace(/\/+$/, "");
 const GIS_FALLBACK_TOKEN = process.env.NEXT_PUBLIC_GIS_TOKEN || "";
+const EARTH_RADIUS_METERS = 6378137;
+const MEASURE_CLOSE_PX = 16;
 
+// Layer configurations
 const cellFillLayer = {
   id: "dy2-cells-fill",
   type: "circle",
@@ -110,6 +141,36 @@ const highlightedCellLayer = {
     "circle-opacity": 0.18,
     "circle-stroke-width": 2,
     "circle-stroke-color": "#F26522",
+  },
+};
+
+const measurementLineLayer = {
+  id: "dy2-measurement-lines",
+  type: "line",
+  paint: {
+    "line-color": "#F26522",
+    "line-width": ["interpolate", ["linear"], ["zoom"], 6, 2, 10, 3, 14, 4],
+    "line-opacity": 0.95,
+  },
+};
+
+const measurementDraftLineLayer = {
+  id: "dy2-measurement-draft-lines",
+  type: "line",
+  paint: {
+    "line-color": "#F26522",
+    "line-width": ["interpolate", ["linear"], ["zoom"], 6, 2, 10, 2.6, 14, 3.4],
+    "line-opacity": 0.82,
+    "line-dasharray": [2, 1.6],
+  },
+};
+
+const measurementFillLayer = {
+  id: "dy2-measurement-fill",
+  type: "fill",
+  paint: {
+    "fill-color": "#F26522",
+    "fill-opacity": 0.16,
   },
 };
 
@@ -247,6 +308,220 @@ const fitBoundsFromCells = (cells) => {
   };
 };
 
+const getPointLabel = (index) => {
+  if (index >= 0 && index < 26) return String.fromCharCode(65 + index);
+  return `P${index + 1}`;
+};
+
+const haversineDistanceMeters = (start, end) => {
+  const lat1 = (start.latitude * Math.PI) / 180;
+  const lat2 = (end.latitude * Math.PI) / 180;
+  const dLat = ((end.latitude - start.latitude) * Math.PI) / 180;
+  const dLng = ((end.longitude - start.longitude) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_METERS * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const formatDistance = (meters) => {
+  if (!Number.isFinite(meters)) return "";
+  if (meters >= 1000) return `${(meters / 1000).toFixed(meters >= 10000 ? 1 : 2)} km`;
+  return `${Math.round(meters)} m`;
+};
+
+const formatArea = (squareMeters) => {
+  if (!Number.isFinite(squareMeters) || squareMeters <= 0) return "";
+  if (squareMeters >= 1_000_000) return `${(squareMeters / 1_000_000).toFixed(2)} km²`;
+  return `${Math.round(squareMeters)} m²`;
+};
+
+const buildSegments = (points, closed = false) => {
+  const segments = [];
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1];
+    const end = points[index];
+    segments.push({
+      start,
+      end,
+      distance: haversineDistanceMeters(start, end),
+      midpoint: {
+        longitude: (start.longitude + end.longitude) / 2,
+        latitude: (start.latitude + end.latitude) / 2,
+      },
+      label: `${getPointLabel(index - 1)}-${getPointLabel(index)}`,
+    });
+  }
+
+  if (closed && points.length >= 3) {
+    const start = points[points.length - 1];
+    const end = points[0];
+    segments.push({
+      start,
+      end,
+      distance: haversineDistanceMeters(start, end),
+      midpoint: {
+        longitude: (start.longitude + end.longitude) / 2,
+        latitude: (start.latitude + end.latitude) / 2,
+      },
+      label: `${getPointLabel(points.length - 1)}-${getPointLabel(0)}`,
+    });
+  }
+
+  return segments;
+};
+
+const polygonAreaSquareMeters = (points) => {
+  if (!Array.isArray(points) || points.length < 3) return 0;
+  const avgLat =
+    points.reduce((sum, point) => sum + point.latitude, 0) / points.length;
+  const cosLat = Math.cos((avgLat * Math.PI) / 180);
+
+  const projected = points.map((point) => ({
+    x: ((point.longitude * Math.PI) / 180) * EARTH_RADIUS_METERS * cosLat,
+    y: ((point.latitude * Math.PI) / 180) * EARTH_RADIUS_METERS,
+  }));
+
+  let area = 0;
+  for (let index = 0; index < projected.length; index += 1) {
+    const current = projected[index];
+    const next = projected[(index + 1) % projected.length];
+    area += current.x * next.y - next.x * current.y;
+  }
+
+  return Math.abs(area / 2);
+};
+
+const polygonCentroid = (points) => {
+  if (!Array.isArray(points) || !points.length) return null;
+  const longitude =
+    points.reduce((sum, point) => sum + point.longitude, 0) / points.length;
+  const latitude =
+    points.reduce((sum, point) => sum + point.latitude, 0) / points.length;
+  return { longitude, latitude };
+};
+
+const createMeasurement = (points, closed = false) => {
+  const normalizedPoints = points.map((point, index) => ({
+    ...point,
+    label: getPointLabel(index),
+  }));
+  const segments = buildSegments(normalizedPoints, closed);
+  return {
+    id: `measure-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    points: normalizedPoints,
+    closed,
+    segments,
+    totalDistance: segments.reduce((sum, segment) => sum + segment.distance, 0),
+    area: closed ? polygonAreaSquareMeters(normalizedPoints) : 0,
+  };
+};
+
+const buildMeasurementLineCollection = (measurements) => ({
+  type: "FeatureCollection",
+  features: measurements
+    .filter((measurement) => measurement.points.length >= 2)
+    .map((measurement) => ({
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          ...measurement.points.map((point) => [point.longitude, point.latitude]),
+          ...(measurement.closed ? [[measurement.points[0].longitude, measurement.points[0].latitude]] : []),
+        ],
+      },
+      properties: {
+        id: measurement.id,
+        closed: measurement.closed,
+      },
+    })),
+});
+
+const buildMeasurementPolygonCollection = (measurements) => ({
+  type: "FeatureCollection",
+  features: measurements
+    .filter((measurement) => measurement.closed && measurement.points.length >= 3)
+    .map((measurement) => ({
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [[
+          ...measurement.points.map((point) => [point.longitude, point.latitude]),
+          [measurement.points[0].longitude, measurement.points[0].latitude],
+        ]],
+      },
+      properties: {
+        id: measurement.id,
+      },
+    })),
+});
+
+const buildMeasurementPointMarkers = (measurements, draftMeasurement) => {
+  const completedPoints = measurements.flatMap((measurement) =>
+    measurement.points.map((point) => ({
+      ...point,
+      id: `${measurement.id}-${point.label}`,
+      draft: false,
+    })),
+  );
+
+  const draftPoints = (draftMeasurement?.points || []).map((point, index) => ({
+    ...point,
+    label: getPointLabel(index),
+    id: `${draftMeasurement.id || "draft"}-${index}`,
+    draft: true,
+  }));
+
+  return [...completedPoints, ...draftPoints];
+};
+
+const buildMeasurementSegmentLabels = (measurements, draftMeasurement) => {
+  const completed = measurements.flatMap((measurement) =>
+    measurement.segments.map((segment, index) => ({
+      id: `${measurement.id}-segment-${index}`,
+      text: formatDistance(segment.distance),
+      caption: segment.label,
+      longitude: segment.midpoint.longitude,
+      latitude: segment.midpoint.latitude,
+      draft: false,
+    })),
+  );
+
+  const draftSegments = draftMeasurement?.points?.length >= 2
+    ? buildSegments(
+        draftMeasurement.points.map((point, index) => ({
+          ...point,
+          label: getPointLabel(index),
+        })),
+      ).map((segment, index) => ({
+        id: `${draftMeasurement.id || "draft"}-segment-${index}`,
+        text: formatDistance(segment.distance),
+        caption: segment.label,
+        longitude: segment.midpoint.longitude,
+        latitude: segment.midpoint.latitude,
+        draft: true,
+      }))
+    : [];
+
+  return [...completed, ...draftSegments];
+};
+
+const buildMeasurementAreaLabels = (measurements) =>
+  measurements
+    .filter((measurement) => measurement.closed && measurement.area > 0)
+    .map((measurement) => {
+      const centroid = polygonCentroid(measurement.points);
+      if (!centroid) return null;
+      return {
+        id: `${measurement.id}-area`,
+        longitude: centroid.longitude,
+        latitude: centroid.latitude,
+        text: formatArea(measurement.area),
+        perimeter: `Perimeter ${formatDistance(measurement.totalDistance)}`,
+      };
+    })
+    .filter(Boolean);
+
 const getFilterPayloadFromSelection = (selection) => {
   const payload = {};
   Object.entries(selection).forEach(([key, values]) => {
@@ -256,6 +531,13 @@ const getFilterPayloadFromSelection = (selection) => {
   });
   return payload;
 };
+
+// ---------------- UI COMPONENTS ----------------
+
+const BaseControlClass =
+  "flex h-11 items-center rounded-xl border border-[#27365C] bg-[rgba(8,18,36,0.92)] text-sm font-medium text-white shadow-[0_16px_32px_rgba(3,8,24,0.4)] backdrop-blur-md transition-all duration-200 hover:border-[#F26522]/40 hover:bg-[rgba(13,24,49,0.95)] hover:text-[#F26522] focus:outline-none";
+const RightSideBtnClass =
+  "flex h-[46px] w-[46px] items-center justify-center rounded-[16px] border border-[#27365C] bg-[rgba(8,18,36,0.94)] text-white shadow-[0_18px_36px_rgba(3,8,24,0.42)] backdrop-blur-md transition-all duration-200 hover:border-[#F26522]/40 hover:bg-[rgba(13,24,49,0.96)] hover:text-[#F26522] focus:outline-none";
 
 function SearchPanel({ cells, searchMode, setSearchMode, searchTerm, setSearchTerm, onApply, onReset }) {
   const [open, setOpen] = useState(false);
@@ -281,7 +563,7 @@ function SearchPanel({ cells, searchMode, setSearchMode, searchTerm, setSearchTe
 
   return (
     <div className="relative w-[320px] max-w-[92vw] sm:w-[390px]" onClick={(event) => event.stopPropagation()}>
-      <div className="flex h-[50px] items-center gap-2 rounded-lg border border-[#d5dce9] bg-white/95 px-2 py-1.5 text-[#24314d] shadow-[0_12px_30px_rgba(15,23,42,0.14)]">
+      <div className={`${BaseControlClass} px-2 py-1.5 w-full`}>
         <button
           type="button"
           onClick={() => {
@@ -289,11 +571,11 @@ function SearchPanel({ cells, searchMode, setSearchMode, searchTerm, setSearchTe
             setSearchTerm("");
             setOpen(true);
           }}
-          className="inline-flex h-9 items-center gap-2 rounded-md border border-[#d9e1f0] bg-[#f4f7fc] px-2.5 text-sm font-medium text-[#24314d]"
+          className="inline-flex h-8 items-center gap-2 rounded-lg bg-white/5 px-2.5 text-xs font-medium text-white transition hover:bg-white/10"
         >
-          <MapIcon className="h-4 w-4" />
+          <MapIcon className="h-3.5 w-3.5" />
           <span className="capitalize">{searchMode}</span>
-          <ChevronDown className="h-4 w-4" />
+          <ChevronDown className="h-3.5 w-3.5" />
         </button>
 
         <input
@@ -306,21 +588,21 @@ function SearchPanel({ cells, searchMode, setSearchMode, searchTerm, setSearchTe
             setOpen(true);
           }}
           placeholder={`Search ${searchMode}`}
-          className="min-w-0 flex-1 bg-transparent px-1.5 py-0 text-sm outline-none placeholder:text-[#98A2B3]"
+          className="min-w-0 flex-1 bg-transparent px-2.5 py-0 text-sm outline-none placeholder:text-white/40 text-white"
         />
 
-        {hasValue ? (
+        {hasValue && (
           <button
             type="button"
             onClick={() => {
               onReset();
               setOpen(false);
             }}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[#667085] transition hover:bg-[#f5f7fb] hover:text-[#24314d]"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-white/50 transition hover:bg-white/10 hover:text-white"
           >
             <X className="h-4 w-4" />
           </button>
-        ) : null}
+        )}
 
         <button
           type="button"
@@ -328,15 +610,15 @@ function SearchPanel({ cells, searchMode, setSearchMode, searchTerm, setSearchTe
             onApply(searchTerm);
             setOpen(false);
           }}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#2447c5] text-white transition hover:bg-[#1d3fb6]"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#F26522] text-white transition hover:bg-[#d9581b] shadow-md ml-1"
         >
           <Search className="h-4 w-4" />
         </button>
       </div>
 
-      {showResults ? (
-        <div className="absolute left-0 z-50 mt-3 w-full rounded-xl border border-[#e6ebf5] bg-white/98 p-3 text-black shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
-          <div className="max-h-56 overflow-y-auto rounded-lg border border-[#E4E7EC]">
+      {showResults && (
+        <div className="absolute left-0 z-50 mt-2 w-full rounded-xl border border-white/10 bg-[#0A1240]/98 p-2 text-white shadow-2xl backdrop-blur-md">
+          <div className="max-h-56 overflow-y-auto custom-scrollbar">
             {activeResults.length ? (
               activeResults.map((item) => {
                 const label = searchMode === "site" ? item : item.cell_id;
@@ -350,21 +632,21 @@ function SearchPanel({ cells, searchMode, setSearchMode, searchTerm, setSearchTe
                       onApply(label);
                       setOpen(false);
                     }}
-                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition hover:bg-[#F5F7FB]"
+                    className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-white/10"
                   >
                     <div className="min-w-0">
-                      <div className="truncate font-medium text-[#24314d]">{label}</div>
-                      {subLabel ? <div className="truncate text-xs text-[#667085]">{subLabel}</div> : null}
+                      <div className="truncate font-medium">{label}</div>
+                      {subLabel && <div className="truncate text-xs text-white/50">{subLabel}</div>}
                     </div>
                   </button>
                 );
               })
             ) : (
-              <div className="px-3 py-3 text-sm font-medium text-[#24314d]">No result found</div>
+              <div className="px-3 py-3 text-sm font-medium text-white/60">No result found</div>
             )}
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -402,53 +684,50 @@ function FilterPanel({ meta, selection, setSelection, onApply, onClear }) {
 
   return (
     <div className="relative" onClick={(event) => event.stopPropagation()}>
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="inline-flex h-[50px] items-center rounded-lg border border-[#d5dce9] bg-white/95 px-4 text-sm font-semibold text-[#24314d] shadow-[0_12px_30px_rgba(15,23,42,0.14)] transition hover:bg-white"
-      >
+      <button type="button" onClick={() => setOpen(!open)} className={`${BaseControlClass} px-4`}>
         Filters <Filter className="ml-2 h-4 w-4" />
       </button>
 
-      {open ? (
-        <div className="absolute left-0 top-full z-50 mt-2 max-h-[70vh] w-[320px] max-w-[92vw] overflow-y-auto rounded-xl bg-white p-4 text-black shadow-xl">
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-2 max-h-[70vh] w-[320px] max-w-[92vw] overflow-y-auto rounded-xl border border-white/10 bg-[#0A1240]/98 p-4 text-white shadow-2xl backdrop-blur-md custom-scrollbar">
           <div className="mb-4 flex gap-3">
-            <button onClick={() => { onApply(); setOpen(false); }} className="flex-1 rounded bg-[#2447c5] py-2 text-sm font-medium text-white">Apply</button>
-            <button onClick={() => { onClear(); setOpen(false); }} className="flex-1 rounded bg-[#98A2B3] py-2 text-sm font-medium text-white">Clear</button>
+            <button onClick={() => { onApply(); setOpen(false); }} className="flex-1 rounded-lg bg-[#F26522] py-2 text-sm font-medium text-white transition hover:bg-[#d9581b]">Apply</button>
+            <button onClick={() => { onClear(); setOpen(false); }} className="flex-1 rounded-lg bg-white/10 py-2 text-sm font-medium text-white transition hover:bg-white/20">Clear</button>
           </div>
 
           {meta?.d1?.map((group) => (
-            <div key={group.parent} className="mb-3 rounded border border-[#E4E7EC] p-2">
+            <div key={group.parent} className="mb-3 rounded-lg border border-white/10 p-2 bg-white/5">
               <button
                 type="button"
                 onClick={() => setOpenGroups((current) => ({ ...current, [group.parent]: !current[group.parent] }))}
-                className="flex w-full items-center justify-between rounded p-1 text-left font-medium hover:bg-gray-100"
+                className="flex w-full items-center justify-between rounded-md p-1.5 text-left font-medium hover:bg-white/10 transition"
               >
                 <span>{group.parent}</span>
                 {openGroups[group.parent] ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </button>
 
-              {openGroups[group.parent] ? (
-                <div className="mt-2 rounded border border-[#E4E7EC] p-2">
+              {openGroups[group.parent] && (
+                <div className="mt-2 rounded-md border border-white/10 p-2 bg-black/20">
                   {group.child?.map((techBlock) => (
-                    <div key={`${group.parent}-${techBlock.name}`} className="mb-3 last:mb-0">
+                    <div key={`${group.parent}-${techBlock.name}`} className="mb-2 last:mb-0">
                       <button
                         type="button"
                         onClick={() => setOpenTech((current) => ({ ...current, [techBlock.name]: !current[techBlock.name] }))}
-                        className="flex w-full items-center justify-between rounded p-1 text-left text-sm font-medium hover:bg-gray-100"
+                        className="flex w-full items-center justify-between rounded-md p-1.5 text-left text-sm font-medium hover:bg-white/10 transition text-white/90"
                       >
                         <span>{techBlock.name}</span>
                         {openTech[techBlock.name] ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </button>
 
-                      {openTech[techBlock.name] ? (
-                        <div className="mt-2 max-h-[180px] overflow-y-auto rounded border border-[#E4E7EC] p-2">
+                      {openTech[techBlock.name] && (
+                        <div className="mt-1 max-h-[180px] overflow-y-auto rounded border border-white/5 p-2 custom-scrollbar">
                           {techBlock.columnName?.map((item) => {
                             const value = item.name;
                             return (
-                              <label key={`${techBlock.name}-${value}`} className="mb-1 flex items-center gap-2 text-sm last:mb-0">
+                              <label key={`${techBlock.name}-${value}`} className="mb-2 flex items-center gap-2 text-sm text-white/80 hover:text-white cursor-pointer last:mb-0">
                                 <input
                                   type="checkbox"
+                                  className="accent-[#F26522]"
                                   checked={(selection[techBlock.name] || []).includes(value)}
                                   onChange={() => toggleValue(techBlock.name, value)}
                                 />
@@ -457,61 +736,15 @@ function FilterPanel({ meta, selection, setSelection, onApply, onClear }) {
                             );
                           })}
                         </div>
-                      ) : null}
+                      )}
                     </div>
                   ))}
                 </div>
-              ) : null}
+              )}
             </div>
           ))}
         </div>
-      ) : null}
-    </div>
-  );
-}
-
-function MapStylePanel({ value, onChange }) {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    const handleClick = () => setOpen(false);
-    window.addEventListener("click", handleClick);
-    return () => window.removeEventListener("click", handleClick);
-  }, []);
-
-  return (
-    <div className="relative" onClick={(event) => event.stopPropagation()}>
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="inline-flex h-[50px] items-center rounded-lg border border-[#d5dce9] bg-white/95 px-4 text-sm font-semibold text-[#24314d] shadow-[0_12px_30px_rgba(15,23,42,0.14)] transition hover:bg-white"
-      >
-        Map Style <ChevronDown className="ml-2 h-4 w-4" />
-      </button>
-
-      {open ? (
-        <div className="absolute left-0 top-full z-50 mt-2 w-[420px] max-w-[92vw] rounded-[32px] border border-[#D7DCEB] bg-white/98 p-5 shadow-[0_32px_80px_rgba(15,23,42,0.18)]">
-          <div className="grid grid-cols-3 gap-4">
-            {Object.entries(MAP_STYLES).map(([styleKey, style]) => {
-              const active = value === styleKey;
-              return (
-                <button
-                  key={styleKey}
-                  type="button"
-                  onClick={() => {
-                    onChange(styleKey);
-                    setOpen(false);
-                  }}
-                  className={`rounded-[22px] p-3 text-center transition ${active ? "bg-[#F4F7FF] shadow-[inset_0_0_0_2px_rgba(36,71,197,0.18)]" : "hover:bg-[#F8FAFC]"}`}
-                >
-                  <div className="h-20 w-full rounded-[18px] border border-[#ECF0F6] shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]" style={{ background: style.preview }} />
-                  <div className="mt-3 text-base font-semibold tracking-[0.03em] text-[#24314d]">{style.label}</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -527,38 +760,101 @@ function AddMapLayerPanel({ showCells, setShowCells, showTowers, setShowTowers, 
 
   return (
     <div className="relative" onClick={(event) => event.stopPropagation()}>
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="inline-flex h-[50px] items-center rounded-lg border border-[#d5dce9] bg-white/95 px-4 text-sm font-semibold text-[#24314d] shadow-[0_12px_30px_rgba(15,23,42,0.14)] transition hover:bg-white"
-      >
-        Add MapLayer <Layers3 className="ml-2 h-4 w-4" />
+      <button type="button" onClick={() => setOpen(!open)} className={`${BaseControlClass} px-4`}>
+        Layers <Layers3 className="ml-2 h-4 w-4" />
       </button>
 
-      {open ? (
-        <div className="absolute left-0 top-full z-50 mt-2 w-[300px] max-w-[92vw] rounded-2xl bg-white p-4 text-black shadow-xl">
-          <div className="space-y-3">
-            <label className="flex items-center justify-between rounded-xl border border-[#E4E7EC] px-3 py-3 text-sm font-medium text-[#24314d]">
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-2 w-[280px] max-w-[92vw] rounded-xl border border-white/10 bg-[#0A1240]/98 p-3 text-white shadow-2xl backdrop-blur-md">
+          <div className="space-y-2">
+            <label className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-sm font-medium hover:bg-white/10 cursor-pointer transition">
               <span>Cells</span>
-              <input type="checkbox" checked={showCells} onChange={(event) => setShowCells(event.target.checked)} />
+              <input type="checkbox" className="accent-[#F26522] w-4 h-4" checked={showCells} onChange={(e) => setShowCells(e.target.checked)} />
             </label>
-            <label className="flex items-center justify-between rounded-xl border border-[#E4E7EC] px-3 py-3 text-sm font-medium text-[#24314d]">
+            <label className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-sm font-medium hover:bg-white/10 cursor-pointer transition">
               <span>Sites / Towers</span>
-              <input type="checkbox" checked={showTowers} onChange={(event) => setShowTowers(event.target.checked)} />
+              <input type="checkbox" className="accent-[#F26522] w-4 h-4" checked={showTowers} onChange={(e) => setShowTowers(e.target.checked)} />
             </label>
-            <label className="flex items-center justify-between rounded-xl border border-[#E4E7EC] px-3 py-3 text-sm font-medium text-[#24314d]">
+            <label className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-sm font-medium hover:bg-white/10 cursor-pointer transition">
               <span>Drive Test</span>
-              <input type="checkbox" checked={showDriveTest} onChange={(event) => setShowDriveTest(event.target.checked)} />
+              <input type="checkbox" className="accent-[#F26522] w-4 h-4" checked={showDriveTest} onChange={(e) => setShowDriveTest(e.target.checked)} />
             </label>
           </div>
         </div>
-      ) : null}
+      )}
+    </div>
+  );
+}
+
+function MapStyleRightControl({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const handleClick = () => setOpen(false);
+    window.addEventListener("click", handleClick);
+    return () => window.removeEventListener("click", handleClick);
+  }, []);
+
+  return (
+    <div className="relative" onClick={(event) => event.stopPropagation()}>
+      <button
+        type="button"
+        title="Map Style"
+        onClick={() => setOpen(!open)}
+        className={`${RightSideBtnClass} ${open ? "border-[#F26522]/45 bg-[rgba(18,28,58,0.96)] text-[#F26522]" : ""}`}
+      >
+        <Layers3 className="h-5 w-5" />
+      </button>
+
+      {open && (
+        <div className="absolute bottom-0 right-full z-50 mr-3 rounded-[24px] border border-[#27365C] bg-[rgba(8,18,36,0.98)] p-3 shadow-[0_24px_48px_rgba(3,8,24,0.52)] backdrop-blur-xl">
+          <div className="flex flex-nowrap items-start gap-3">
+            {Object.entries(MAP_STYLES).map(([styleKey, style]) => {
+              const active = value === styleKey;
+              return (
+                <button
+                  key={styleKey}
+                  type="button"
+                  onClick={() => {
+                    onChange(styleKey);
+                    setOpen(false);
+                  }}
+                  className={`group flex w-[92px] shrink-0 flex-col items-center rounded-[18px] border px-2 py-2.5 text-center transition-all duration-200 ${
+                    active
+                      ? "border-[#F26522]/50 bg-[rgba(33,22,32,0.95)] text-[#F26522]"
+                      : "border-transparent bg-transparent text-white/72 hover:border-[#27365C] hover:bg-[rgba(13,24,49,0.95)] hover:text-white"
+                  }`}
+                >
+                  <div
+                    className={`relative h-[62px] w-[62px] rounded-[18px] border transition-all duration-200 ${
+                      active ? "border-[#F26522]/55 shadow-[0_0_0_1px_rgba(242,101,34,0.1)]" : "border-white/8"
+                    }`}
+                    style={style.previewStyle}
+                  >
+                    {active ? (
+                      <span className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#F26522] text-white shadow-lg">
+                        <Check className="h-3.5 w-3.5" />
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className={`mt-2 text-[11px] font-semibold tracking-[0.08em] ${active ? "text-[#F26522]" : "text-inherit"}`}>
+                    {style.label}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function GISEnginePage() {
   const mapRef = useRef(null);
+  const containerRef = useRef(null);
+  const draftMeasurementRef = useRef(null);
+  
   const [viewState, setViewState] = useState(DEFAULT_VIEW_STATE);
   const [cells, setCells] = useState([]);
   const [telecomFilterMeta, setTelecomFilterMeta] = useState({ d1: [] });
@@ -576,11 +872,41 @@ export default function GISEnginePage() {
   const [driveTestSessions, setDriveTestSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  
+  // Right side controls UI State
+  const [toolsExpanded, setToolsExpanded] = useState(false);
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const [measurements, setMeasurements] = useState([]);
+  const [draftMeasurement, setDraftMeasurement] = useState(null);
 
   const cellGeoJson = useMemo(() => buildFeatureCollection(cells), [cells]);
   const towerGeoJson = useMemo(() => buildFeatureCollection(towers), [towers]);
   const driveTestGeoJson = useMemo(() => buildDriveTestCollection(driveTestSessions), [driveTestSessions]);
   const highlightedGeoJson = useMemo(() => buildHighlightedCollection(cells, highlightedCellId), [cells, highlightedCellId]);
+  const measurementLineGeoJson = useMemo(() => buildMeasurementLineCollection(measurements), [measurements]);
+  const measurementFillGeoJson = useMemo(() => buildMeasurementPolygonCollection(measurements), [measurements]);
+  const draftMeasurementGeoJson = useMemo(
+    () =>
+      buildMeasurementLineCollection(
+        draftMeasurement?.points?.length >= 2
+          ? [createMeasurement(draftMeasurement.points, false)]
+          : [],
+      ),
+    [draftMeasurement],
+  );
+  const measurementPoints = useMemo(
+    () => buildMeasurementPointMarkers(measurements, draftMeasurement),
+    [measurements, draftMeasurement],
+  );
+  const measurementSegmentLabels = useMemo(
+    () => buildMeasurementSegmentLabels(measurements, draftMeasurement),
+    [measurements, draftMeasurement],
+  );
+  const measurementAreaLabels = useMemo(() => buildMeasurementAreaLabels(measurements), [measurements]);
+
+  useEffect(() => {
+    draftMeasurementRef.current = draftMeasurement;
+  }, [draftMeasurement]);
 
   const fetchJson = async (path, options = {}) => {
     const authToken =
@@ -651,7 +977,6 @@ export default function GISEnginePage() {
 
   useEffect(() => {
     let active = true;
-
     const bootstrap = async () => {
       try {
         setLoading(true);
@@ -664,16 +989,12 @@ export default function GISEnginePage() {
 
         if (!active) return;
 
-        if (filterMetaPayload?.data) {
-          setTelecomFilterMeta(filterMetaPayload.data);
-        }
+        if (filterMetaPayload?.data) setTelecomFilterMeta(filterMetaPayload.data);
 
         const conf = setupPayload?.data || {};
         let initialFilters = {};
 
-        if (conf?.mapView && MAP_STYLES[conf.mapView]) {
-          setMapStyle(conf.mapView);
-        }
+        if (conf?.mapView && MAP_STYLES[conf.mapView]) setMapStyle(conf.mapView);
 
         if (conf?.saveLatLong) {
           try {
@@ -691,9 +1012,7 @@ export default function GISEnginePage() {
           try {
             initialFilters = JSON.parse(conf.saveMapFilters);
             setSelectedFilters(initialFilters);
-          } catch {
-            initialFilters = {};
-          }
+          } catch { initialFilters = {}; }
         }
 
         if (conf?.saveLayerVisibility) {
@@ -715,10 +1034,7 @@ export default function GISEnginePage() {
     };
 
     bootstrap();
-
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, []);
 
   const handleApplyFilters = async () => {
@@ -755,15 +1071,10 @@ export default function GISEnginePage() {
     if (!query) return;
 
     let target = null;
-
     if (searchMode === "site") {
-      target =
-        cells.find((cell) => cell.site_name?.toLowerCase() === query) ||
-        cells.find((cell) => cell.site_name?.toLowerCase().includes(query));
+      target = cells.find((cell) => cell.site_name?.toLowerCase() === query) || cells.find((cell) => cell.site_name?.toLowerCase().includes(query));
     } else {
-      target =
-        cells.find((cell) => cell.cell_id?.toLowerCase() === query) ||
-        cells.find((cell) => cell.cell_id?.toLowerCase().includes(query));
+      target = cells.find((cell) => cell.cell_id?.toLowerCase() === query) || cells.find((cell) => cell.cell_id?.toLowerCase().includes(query));
     }
 
     if (!target) return;
@@ -787,40 +1098,106 @@ export default function GISEnginePage() {
   };
 
   const handleMapClick = (event) => {
+    if (isMeasuring) {
+      const currentDraft = draftMeasurementRef.current?.points || [];
+      const clickPoint = event.point;
+      const currentMap = mapRef.current?.getMap?.();
+
+      if (
+        currentDraft.length >= 3 &&
+        currentMap &&
+        clickPoint
+      ) {
+        const projectedFirst = currentMap.project([
+          currentDraft[0].longitude,
+          currentDraft[0].latitude,
+        ]);
+        const deltaX = projectedFirst.x - clickPoint.x;
+        const deltaY = projectedFirst.y - clickPoint.y;
+        const closeToStart = Math.sqrt(deltaX ** 2 + deltaY ** 2) <= MEASURE_CLOSE_PX;
+
+        if (closeToStart) {
+          setMeasurements((current) => [...current, createMeasurement(currentDraft, true)]);
+          setDraftMeasurement({ id: `draft-${Date.now()}`, points: [] });
+          return;
+        }
+      }
+
+      const nextPoint = {
+        longitude: event.lngLat.lng,
+        latitude: event.lngLat.lat,
+      };
+
+      setDraftMeasurement((current) => {
+        const currentPoints = current?.points || [];
+        return {
+          id: current?.id || `draft-${Date.now()}`,
+          points: [...currentPoints, nextPoint],
+        };
+      });
+      setSelectedCell(null);
+      return;
+    }
+
     const feature = event?.features?.[0];
     if (!feature?.properties) {
       setSelectedCell(null);
       return;
     }
-
     setSelectedCell(feature.properties);
     setHighlightedCellId(feature.properties.cell_id);
   };
 
-  const handleLocate = () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((position) => {
-      const nextLocation = {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      };
-      setUserLocation(nextLocation);
-      setViewState((current) => ({
-        ...current,
-        latitude: nextLocation.latitude,
-        longitude: nextLocation.longitude,
-        zoom: Math.max(current.zoom, 14),
-        transitionDuration: 900,
-      }));
+  // Tools Actions
+  const handleFitToData = () => {
+    const nextView = fitBoundsFromCells(cells);
+    if (nextView) setViewState((current) => ({ ...current, ...nextView }));
+  };
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement && containerRef.current) {
+      containerRef.current.requestFullscreen().catch(err => console.log(err));
+    } else if (document.fullscreenElement) {
+      document.exitFullscreen();
+    }
+  };
+
+  const toggleMeasurementMode = () => {
+    setIsMeasuring((current) => {
+      const nextValue = !current;
+      if (nextValue && !draftMeasurementRef.current) {
+        setDraftMeasurement({ id: `draft-${Date.now()}`, points: [] });
+      }
+      if (!nextValue && !(draftMeasurementRef.current?.points?.length)) {
+        setDraftMeasurement(null);
+      }
+      return nextValue;
     });
   };
 
-  const resetNorth = () => {
-    setViewState((current) => ({ ...current, bearing: 0, pitch: 0, transitionDuration: 700 }));
+  const handleFinalizeMeasurement = () => {
+    const points = draftMeasurementRef.current?.points || [];
+    if (points.length < 2) return;
+    setMeasurements((current) => [...current, createMeasurement(points, false)]);
+    setDraftMeasurement({ id: `draft-${Date.now()}`, points: [] });
+  };
+
+  const handleUndoMeasurementPoint = () => {
+    setDraftMeasurement((current) => {
+      const points = current?.points || [];
+      if (!points.length) return current;
+      const nextPoints = points.slice(0, -1);
+      return nextPoints.length ? { ...current, points: nextPoints } : { ...current, points: [] };
+    });
+  };
+
+  const handleClearMeasurements = () => {
+    setMeasurements([]);
+    setDraftMeasurement(isMeasuring ? { id: `draft-${Date.now()}`, points: [] } : null);
   };
 
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[linear-gradient(180deg,#09001A_0%,#0A1240_38%,#071224_100%)]">
+    <div ref={containerRef} className="relative h-full min-h-0 w-full overflow-hidden bg-[linear-gradient(180deg,#09001A_0%,#0A1240_38%,#071224_100%)]">
       <div className="gis-map relative h-full min-h-0 w-full overflow-hidden">
         <Map
           ref={mapRef}
@@ -833,33 +1210,53 @@ export default function GISEnginePage() {
           onClick={handleMapClick}
           dragRotate
           touchZoomRotate
+          doubleClickZoom={!isMeasuring}
+          cursor={isMeasuring ? "crosshair" : "grab"}
         >
-          {showCells ? (
+          {measurementAreaLabels.length ? (
+            <Source id="dy2-measurement-fill-source" type="geojson" data={measurementFillGeoJson}>
+              <Layer {...measurementFillLayer} />
+            </Source>
+          ) : null}
+
+          {measurementLineGeoJson.features.length ? (
+            <Source id="dy2-measurement-line-source" type="geojson" data={measurementLineGeoJson}>
+              <Layer {...measurementLineLayer} />
+            </Source>
+          ) : null}
+
+          {draftMeasurementGeoJson.features.length ? (
+            <Source id="dy2-measurement-draft-source" type="geojson" data={draftMeasurementGeoJson}>
+              <Layer {...measurementDraftLineLayer} />
+            </Source>
+          ) : null}
+
+          {showCells && (
             <>
               <Source id="dy2-cells-source" type="geojson" data={cellGeoJson}>
                 <Layer {...cellFillLayer} />
               </Source>
-              {highlightedCellId ? (
+              {highlightedCellId && (
                 <Source id="dy2-highlighted-cell" type="geojson" data={highlightedGeoJson}>
                   <Layer {...highlightedCellLayer} />
                 </Source>
-              ) : null}
+              )}
             </>
-          ) : null}
+          )}
 
-          {showTowers ? (
+          {showTowers && (
             <Source id="dy2-towers-source" type="geojson" data={towerGeoJson}>
               <Layer {...towerFillLayer} />
             </Source>
-          ) : null}
+          )}
 
-          {showDriveTest ? (
+          {showDriveTest && (
             <Source id="dy2-drive-test-source" type="geojson" data={driveTestGeoJson}>
               <Layer {...driveTestLineLayer} />
             </Source>
-          ) : null}
+          )}
 
-          {selectedCell ? (
+          {selectedCell && (
             <Popup
               longitude={Number(selectedCell.longitude)}
               latitude={Number(selectedCell.latitude)}
@@ -868,34 +1265,80 @@ export default function GISEnginePage() {
               offset={20}
               className="dy2-gis-popup"
             >
-              <div className="rounded-[18px] border border-white/10 bg-[rgba(9,16,48,0.96)] px-4 py-3 text-white shadow-[0_18px_50px_rgba(4,8,24,0.5)]">
-                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#F26522]">
+              <div className="rounded-[16px] border border-white/10 bg-[rgba(10,18,64,0.95)] px-4 py-3 text-white shadow-2xl backdrop-blur-md">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-[#F26522]">
                   {selectedCell.cell_id ? "Cell Details" : "Site Details"}
                 </div>
-                <div className="mt-2 text-base font-semibold">{selectedCell.cell_id || selectedCell.tower_id || selectedCell.site_name}</div>
-                <div className="mt-1 text-sm text-white/70">{selectedCell.site_name}</div>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-white/70">
-                  <div><span className="text-white/40">Tech:</span> {selectedCell.technology || "-"}</div>
-                  <div><span className="text-white/40">Band:</span> {selectedCell.band || "-"}</div>
-                  <div><span className="text-white/40">Region:</span> {selectedCell.region || "-"}</div>
-                  <div><span className="text-white/40">Vendor:</span> {selectedCell.operator || "-"}</div>
+                <div className="mt-1.5 text-base font-semibold">{selectedCell.cell_id || selectedCell.tower_id || selectedCell.site_name}</div>
+                <div className="mt-0.5 text-sm text-white/60">{selectedCell.site_name}</div>
+                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-white/80">
+                  <div><span className="text-white/40 mr-1">Tech:</span> {selectedCell.technology || "-"}</div>
+                  <div><span className="text-white/40 mr-1">Band:</span> {selectedCell.band || "-"}</div>
+                  <div><span className="text-white/40 mr-1">Region:</span> {selectedCell.region || "-"}</div>
+                  <div><span className="text-white/40 mr-1">Vendor:</span> {selectedCell.operator || "-"}</div>
                 </div>
               </div>
             </Popup>
-          ) : null}
+          )}
 
-          {userLocation ? (
-            <Marker longitude={userLocation.longitude} latitude={userLocation.latitude} anchor="center">
-              <span className="relative flex h-5 w-5 items-center justify-center">
-                <span className="absolute inline-flex h-5 w-5 animate-ping rounded-full bg-emerald-400/35" />
-                <span className="relative h-3 w-3 rounded-full border border-white/80 bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,0.8)]" />
-              </span>
+          {measurementPoints.map((point) => (
+            <Marker
+              key={point.id}
+              longitude={point.longitude}
+              latitude={point.latitude}
+              anchor="center"
+            >
+              <div className="relative flex flex-col items-center">
+                <div
+                  className={`flex h-5 w-5 items-center justify-center rounded-full border shadow-[0_10px_18px_rgba(3,8,24,0.4)] ${
+                    point.draft
+                      ? "border-[#F26522]/70 bg-[rgba(31,21,26,0.96)]"
+                      : "border-[#F26522]/55 bg-[rgba(8,18,36,0.95)]"
+                  }`}
+                >
+                  <span className="block h-2.5 w-2.5 rounded-full bg-[#F26522]" />
+                </div>
+                <div className="mt-1 rounded-full border border-[#F26522]/30 bg-[rgba(8,18,36,0.96)] px-1.5 py-0.5 text-[10px] font-bold tracking-[0.08em] text-[#F26522]">
+                  {point.label}
+                </div>
+              </div>
             </Marker>
-          ) : null}
+          ))}
+
+          {measurementSegmentLabels.map((label) => (
+            <Marker
+              key={label.id}
+              longitude={label.longitude}
+              latitude={label.latitude}
+              anchor="center"
+            >
+              <div
+                className={`rounded-full border px-2 py-1 text-center shadow-[0_14px_24px_rgba(3,8,24,0.42)] ${
+                  label.draft
+                    ? "border-[#F26522]/35 bg-[rgba(31,21,26,0.9)]"
+                    : "border-[#27365C] bg-[rgba(8,18,36,0.94)]"
+                }`}
+              >
+                <div className="text-[10px] font-bold tracking-[0.1em] text-white/45">{label.caption}</div>
+                <div className="text-[11px] font-semibold text-[#F26522]">{label.text}</div>
+              </div>
+            </Marker>
+          ))}
+
+          {measurementAreaLabels.map((label) => (
+            <Marker key={label.id} longitude={label.longitude} latitude={label.latitude} anchor="center">
+              <div className="rounded-[16px] border border-[#F26522]/40 bg-[rgba(31,21,26,0.96)] px-3 py-2 text-center shadow-[0_18px_28px_rgba(3,8,24,0.48)]">
+                <div className="text-[10px] font-bold tracking-[0.1em] text-white/45">AREA</div>
+                <div className="text-sm font-semibold text-[#F26522]">{label.text}</div>
+                <div className="mt-0.5 text-[10px] text-white/55">{label.perimeter}</div>
+              </div>
+            </Marker>
+          ))}
         </Map>
 
+        {/* Top Controls (Search, Filters, Layers) */}
         <div className="pointer-events-none absolute inset-x-0 top-0 z-20 p-4 sm:p-5">
-          <div className="pointer-events-auto flex flex-wrap items-center gap-2">
+          <div className="pointer-events-auto flex flex-wrap items-center gap-3">
             <SearchPanel
               cells={cells}
               searchMode={searchMode}
@@ -920,42 +1363,161 @@ export default function GISEnginePage() {
               showDriveTest={showDriveTest}
               setShowDriveTest={setShowDriveTest}
             />
-            <MapStylePanel value={mapStyle} onChange={setMapStyle} />
           </div>
         </div>
 
-        <div className="absolute right-5 top-5 z-20 flex flex-col gap-3">
-          <button onClick={resetNorth} className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/80 bg-white/95 text-[#24314d] shadow-[0_12px_30px_rgba(15,23,42,0.14)]">
-            <Crosshair className="h-5 w-5" />
+        {/* 4. Compass Control (Top Right) */}
+        <div className="absolute right-5 top-5 z-20">
+          <button 
+            title="Reset North" 
+            onClick={() => setViewState(curr => ({ ...curr, bearing: 0, pitch: 0, transitionDuration: 700 }))} 
+            className={`${RightSideBtnClass} relative`}
+          >
+            <span className="absolute top-1.5 text-[9px] font-bold tracking-[0.18em] text-white/45">N</span>
+            <Compass className="h-5 w-5 text-[#F26522]" />
           </button>
         </div>
 
-        <div className="absolute bottom-6 right-5 z-20 flex flex-col gap-3">
-          <button onClick={handleLocate} className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/80 bg-white/95 text-[#24314d] shadow-[0_12px_30px_rgba(15,23,42,0.14)]">
-            <LocateFixed className="h-5 w-5" />
+        {/* Bottom Right Control Stack */}
+        <div className="absolute bottom-6 right-5 z-20 flex flex-col items-end gap-3">
+          
+          {/* 3. Fit to Data Control */}
+          <button 
+            title="Fit to Data" 
+            onClick={handleFitToData} 
+            className={`${RightSideBtnClass} ${cells.length ? "" : "pointer-events-none opacity-60"}`}
+          >
+            <Focus className="h-5 w-5 text-[#F26522]" />
           </button>
-          <button onClick={() => setViewState((current) => ({ ...current, zoom: current.zoom + 1, transitionDuration: 250 }))} className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/80 bg-white/95 text-[#24314d] shadow-[0_12px_30px_rgba(15,23,42,0.14)]">
-            <Plus className="h-5 w-5" />
-          </button>
-          <button onClick={() => setViewState((current) => ({ ...current, zoom: Math.max(current.zoom - 1, 2), transitionDuration: 250 }))} className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/80 bg-white/95 text-[#24314d] shadow-[0_12px_30px_rgba(15,23,42,0.14)]">
-            <Minus className="h-5 w-5" />
-          </button>
-        </div>
 
-        {loading ? (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#08112f]/12">
-            <div className="rounded-2xl border border-white/10 bg-[rgba(9,16,48,0.9)] px-5 py-3 text-sm font-medium text-white shadow-[0_18px_50px_rgba(4,8,24,0.45)]">
-              Loading GIS data...
+          {/* 2. Map Style Control */}
+          <MapStyleRightControl value={mapStyle} onChange={setMapStyle} />
+
+          {(isMeasuring || measurements.length > 0 || draftMeasurement?.points?.length) && (
+            <div className="w-[290px] rounded-[20px] border border-[#27365C] bg-[rgba(8,18,36,0.96)] p-3 shadow-[0_24px_42px_rgba(3,8,24,0.5)] backdrop-blur-xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#F26522]">Measurement</div>
+                  <div className="mt-1 text-xs text-white/60">
+                    {isMeasuring
+                      ? "Click to add points. Click near the first point to close the area."
+                      : "Measurement mode paused."}
+                  </div>
+                </div>
+                <div className="rounded-full border border-[#F26522]/25 bg-[rgba(31,21,26,0.9)] px-2 py-1 text-[10px] font-semibold text-[#F26522]">
+                  {measurements.length} saved
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={handleFinalizeMeasurement}
+                  disabled={(draftMeasurement?.points?.length || 0) < 2}
+                  className="rounded-xl border border-[#F26522]/30 bg-[rgba(31,21,26,0.92)] px-3 py-2 text-[11px] font-semibold text-[#F26522] transition hover:border-[#F26522]/45 hover:bg-[rgba(46,24,18,0.96)] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Finish
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUndoMeasurementPoint}
+                  disabled={!(draftMeasurement?.points?.length)}
+                  className="rounded-xl border border-[#27365C] bg-[rgba(13,24,49,0.94)] px-3 py-2 text-[11px] font-semibold text-white/75 transition hover:border-[#F26522]/30 hover:text-[#F26522] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Undo
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearMeasurements}
+                  disabled={!(measurements.length || draftMeasurement?.points?.length)}
+                  className="rounded-xl border border-[#27365C] bg-[rgba(13,24,49,0.94)] px-3 py-2 text-[11px] font-semibold text-white/75 transition hover:border-[#F26522]/30 hover:text-[#F26522] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 1. Main Tools Expanding Control */}
+          <div className={`flex flex-row-reverse items-center rounded-[18px] border border-[#27365C] bg-[rgba(8,18,36,0.96)] p-1.5 shadow-[0_18px_36px_rgba(3,8,24,0.42)] backdrop-blur-xl transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${toolsExpanded ? "pr-2" : ""}`}>
+            
+            {/* Settings Trigger */}
+            <button 
+              onClick={() => setToolsExpanded(!toolsExpanded)} 
+              className={`flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-xl border transition-all duration-200 ${
+                toolsExpanded
+                  ? "border-[#F26522]/45 bg-[rgba(31,21,26,0.96)] text-[#F26522]"
+                  : "border-transparent bg-transparent text-white hover:border-[#F26522]/30 hover:bg-[rgba(13,24,49,0.96)] hover:text-[#F26522]"
+              }`}
+            >
+              {toolsExpanded ? <X className="h-5 w-5" /> : <Settings className="h-5 w-5" />}
+            </button>
+            
+            {/* Expandable Tools */}
+            <div className={`flex items-center overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${toolsExpanded ? "w-[164px] opacity-100 gap-1.5 mr-1.5" : "w-0 opacity-0 gap-0 mr-0"}`}>
+              <button
+                title="Measurement"
+                onClick={toggleMeasurementMode}
+                className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
+                  isMeasuring
+                    ? "border-[#F26522]/45 bg-[rgba(31,21,26,0.96)] text-[#F26522]"
+                    : "border-transparent text-white hover:border-[#F26522]/30 hover:bg-[rgba(13,24,49,0.96)] hover:text-[#F26522]"
+                }`}
+              >
+                <Ruler className="h-4 w-4" />
+              </button>
+              <button
+                title="Fullscreen"
+                onClick={toggleFullscreen}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-white transition-colors hover:border-[#F26522]/30 hover:bg-[rgba(13,24,49,0.96)] hover:text-[#F26522]"
+              >
+                <Maximize className="h-4 w-4" />
+              </button>
+              <button
+                title="Zoom Out"
+                onClick={() => setViewState(curr => ({ ...curr, zoom: Math.max(curr.zoom - 1, 2), transitionDuration: 250 }))}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-white transition-colors hover:border-[#F26522]/30 hover:bg-[rgba(13,24,49,0.96)] hover:text-[#F26522]"
+              >
+                <Minus className="h-4 w-4" />
+              </button>
+              <button
+                title="Zoom In"
+                onClick={() => setViewState(curr => ({ ...curr, zoom: curr.zoom + 1, transitionDuration: 250 }))}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-white transition-colors hover:border-[#F26522]/30 hover:bg-[rgba(13,24,49,0.96)] hover:text-[#F26522]"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
             </div>
           </div>
-        ) : null}
 
-        {error ? (
-          <div className="absolute bottom-6 left-6 z-20 max-w-md rounded-2xl border border-[#f97316]/25 bg-[rgba(9,16,48,0.94)] px-4 py-3 text-sm text-white shadow-[0_18px_50px_rgba(4,8,24,0.45)]">
-            <div className="font-semibold text-[#F26522]">GIS Engine</div>
-            <div className="mt-1 text-white/75">{error}</div>
+        </div>
+
+        {/* Global States (Loading/Errors) */}
+        {loading && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#08112f]/30 backdrop-blur-sm transition-all duration-300">
+            <div className="rounded-xl border border-white/10 bg-[#0A1240]/95 px-6 py-4 text-sm font-medium text-white shadow-2xl">
+              <div className="flex items-center gap-3">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#F26522] border-t-transparent"></div>
+                Loading GIS data...
+              </div>
+            </div>
           </div>
-        ) : null}
+        )}
+
+        {error && (
+          <div className="absolute bottom-6 left-6 z-20 max-w-md rounded-xl border border-[#F26522]/40 bg-[#0A1240]/95 px-4 py-3 text-sm text-white shadow-2xl backdrop-blur-md">
+            <div className="font-semibold text-[#F26522]">GIS Engine Alert</div>
+            <div className="mt-1 text-white/80">{error}</div>
+          </div>
+        )}
+
+        {/* Utility CSS for hidden scrollbars */}
+        <style dangerouslySetInnerHTML={{__html: `
+          .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+          .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+          .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+        `}} />
       </div>
     </div>
   );
