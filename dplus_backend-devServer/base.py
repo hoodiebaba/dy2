@@ -58,6 +58,20 @@ env_path = os.path.join(os.getcwd(),env_file_name)
 load_dotenv(dotenv_path=env_path)
 
 
+def make_json_safe(value):
+    if isinstance(value, dict):
+        return {k: make_json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [make_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [make_json_safe(v) for v in value]
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
 def del_itm(data,remover):
     print(data,remover)
 
@@ -250,4 +264,4 @@ def respond(userRole,data=None,typeuser=None):
     # print(userRole,"userRole")
     
     # log_manager.response_two(jsonify(userRole), myResponse)
-    return jsonify(userRole), myResponse
+    return jsonify(make_json_safe(userRole)), myResponse

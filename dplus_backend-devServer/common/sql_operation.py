@@ -232,11 +232,7 @@ def _ensure_local_dev_schema():
             """),
             {"id": admin_role_id, "rolename": "ADMIN", "permission": "{}"},
         )
-        conn.execute(
-            text("""
-                INSERT OR IGNORE INTO Users (id, firstname, lastname, username, password, roleId, loginType, deleteStatus)
-                VALUES (:id, :firstname, :lastname, :username, :password, :roleId, :loginType, :deleteStatus)
-            """),
+        for seeded_user in [
             {
                 "id": admin_user_id,
                 "firstname": "Datayog",
@@ -247,7 +243,44 @@ def _ensure_local_dev_schema():
                 "loginType": "web",
                 "deleteStatus": 0,
             },
-        )
+            {
+                "id": "user-admin-portal",
+                "firstname": "Datayog",
+                "lastname": "User",
+                "username": "admin",
+                "password": "Safari@1",
+                "roleId": admin_role_id,
+                "loginType": "web",
+                "deleteStatus": 0,
+            },
+            {
+                "id": "user-rsarfraz",
+                "firstname": "R",
+                "lastname": "Sarfraz",
+                "username": "rsarfraz",
+                "password": "Safari@1",
+                "roleId": admin_role_id,
+                "loginType": "web",
+                "deleteStatus": 0,
+            },
+            {
+                "id": "user-test",
+                "firstname": "Test",
+                "lastname": "User",
+                "username": "Test",
+                "password": "Test",
+                "roleId": admin_role_id,
+                "loginType": "web",
+                "deleteStatus": 0,
+            },
+        ]:
+            conn.execute(
+                text("""
+                    INSERT OR IGNORE INTO Users (id, firstname, lastname, username, password, roleId, loginType, deleteStatus)
+                    VALUES (:id, :firstname, :lastname, :username, :password, :roleId, :loginType, :deleteStatus)
+                """),
+                seeded_user,
+            )
         conn.execute(
             text("""
                 INSERT OR IGNORE INTO dbConfig
@@ -274,16 +307,30 @@ print("sql_db",connection_str,"connection_str")
 
 
 try:
-    engine_creation = create_engine(connection_str)
+    engine_kwargs = {}
+    if sql_db_type == "PostgreSQL" and not LOCAL_DEV_MODE:
+        engine_kwargs["connect_args"] = {"options": "-csearch_path=web,public"}
+    engine_creation = create_engine(connection_str, **engine_kwargs)
     if LOCAL_DEV_MODE:
         _ensure_local_dev_schema()
-    # engine_conn=engine_creation.connect()
     engine_conn=engine_creation.connect().execution_options(
         **{"compiled_cache": None, "global_error_handler": global_error_handler}
     )
 
 except exc.PendingRollbackError as e:
     print(e,"PendingRollbackError")
+except Exception as e:
+    if not LOCAL_DEV_MODE:
+        print("Primary DB unavailable, switching to local sqlite fallback", e)
+        LOCAL_DEV_MODE = True
+        connection_str = createConnStr(sql_db_type, sql_conn_obj)
+        engine_creation = create_engine(connection_str)
+        _ensure_local_dev_schema()
+        engine_conn = engine_creation.connect().execution_options(
+            **{"compiled_cache": None, "global_error_handler": global_error_handler}
+        )
+    else:
+        raise
 
 
 

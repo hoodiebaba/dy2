@@ -124,5 +124,5 @@ CORS(app)
 
 # socketio.run(app,host="0.0.0.0",port=8095,debug=True)
 cfsocket.socketio.init_app(app, cors_allowed_origins="*")
-cfsocket.socketio.run(app,port=8060,host="0.0.0.0", debug=True,allow_unsafe_werkzeug=True)
+cfsocket.socketio.run(app, port=8060, host="0.0.0.0", debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
 

@@ -59,7 +59,7 @@ def login():
         print(userData)
 
 
-        uniqueid=userData["data"]["id"]
+        uniqueid=str(userData["data"]["id"])
         expisre=datetime.utcnow() + timedelta(days=7)
         userData["data"]["expiresIn"]="36000" #10 Hour session expire 
         expsire=ctm.u_timestamp(timedelta(days=7))
@@ -89,9 +89,12 @@ def login():
         confdata=cso.finding(sqlQuery)["data"]
         confdict={}
         for i in confdata:
-            confdict[i["configName"]]=i["configValue"]
+            config_name = i.get("configName") or i.get("configname")
+            config_value = i.get("configValue") if "configValue" in i else i.get("configvalue")
+            if config_name is not None:
+                confdict[config_name]=config_value
         
-        response.data = json.dumps(userData["data"])
+        response.data = json.dumps(make_json_safe(userData["data"]))
         print(response,"responseresponse")
         # log_manager.response(response)
 

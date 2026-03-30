@@ -1,49 +1,12 @@
 /** @type {import('tailwindcss').Config} */
-export default {
-  content:["./src/**/*.{js,jsx}"],
-  darkMode: 'media',
-
-  
+module.exports = {
+  content: [
+    './app/**/*.{js,jsx,ts,tsx}',
+    './components/**/*.{js,jsx,ts,tsx}',
+    './lib/**/*.{js,jsx,ts,tsx}'
+  ],
   theme: {
-    screens: {
-      sm: "640px",
-      md: "768px",
-      lg: "1024px",
-      xl: "1280px",
-      "2xl": "1536px",
-    },
-    extend: {
-      
-      fontFamily: {
-        sans: ['Slabo', 'sans-serif'],
-      },
-      colors:{
-        "primaryLine":"var(--mainprimary)",
-        "secLine":"var(--mainsec)",
-        "topbarLine":"var(--topbar)",
-        
-        // "topbarLine":"#6102af",
-      },
-      backgroundImage: {
-        'login': "url('/login_background.jpg')",
-        "primaryLine":"var(--mainprimary)",
-        // "topbarLine":"var(--topbar)",
-        
-      },
-      backgroundColor:{
-        'pbutton':"var(--mainsec)"
-      },
-      borderColor:{
-        'pbutton':"var(--mainsec)",
-        "primaryLine":"var(--mainprimary)",
-      },
-      stroke:{
-        'scolor':"var(--mainsec)",
-        
-        "pcolor":"var(--mainprimary)",
-      }
-    },
+    extend: {},
   },
   plugins: [],
-}
-
+};
