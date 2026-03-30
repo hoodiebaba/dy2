@@ -16,6 +16,10 @@ const parseJson = (value, fallback = null) => {
 };
 
 export const getApiBase = () => {
+  const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  if (configuredBase) {
+    return configuredBase.replace(/\/+$/, "");
+  }
   if (typeof window === "undefined") return "http://127.0.0.1:8060";
   return `http://${window.location.hostname}:8060`;
 };
